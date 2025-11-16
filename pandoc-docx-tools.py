@@ -102,7 +102,6 @@ Author: R. N. West (PowerShell original)
 Converted to Python and unified by Claude Code
 """
 
-import argparse
 import os
 import platform
 import re
@@ -114,6 +113,7 @@ import zipfile
 from pathlib import Path
 from typing import NoReturn, Optional
 
+import click
 from lxml import etree as ET
 
 # Constants
@@ -186,7 +186,9 @@ def validate_markdown_file(md_file: Path) -> None:
         error_exit(f"File '{md_file}' does not exist.")
 
     if md_file.suffix.lower() != MARKDOWN_EXTENSION:
-        error_exit(f"File '{md_file}' is not a Markdown file ({MARKDOWN_EXTENSION} expected).")
+        error_exit(
+            f"File '{md_file}' is not a Markdown file ({MARKDOWN_EXTENSION} expected)."
+        )
 
 
 def validate_reference_doc(reference_doc: Path) -> None:
@@ -667,31 +669,132 @@ def format_openxml(path: Path) -> None:
 
 
 # =============================================================================
-# Command Handlers
+# Click Command Group
 # =============================================================================
 
 
-def cmd_compile(args: argparse.Namespace) -> None:
-    """Handle the compile subcommand."""
-    md_file = Path(args.md_file)
+@click.group()
+@click.version_option()
+def cli() -> None:
+    """Pandoc DOCX Tools - Manage Pandoc DOCX reference documents.
+
+    Write content in Markdown (version-control friendly) while maintaining corporate
+    styling requirements in DOCX output. Separates content from presentation.
+
+    \b
+    WORKFLOW
+    ========
+
+    1. Initial Setup:
+       - Create or obtain a reference-doc.docx with your desired styles
+       - Run: pandoc-docx-tools.py apply
+       - This extracts and formats the DOCX for version control
+
+    2. Editing Styles in Word:
+       - Modify reference-doc.docx in Microsoft Word
+       - Update styles via: Home → Styles pane → Filter → Modify
+       - Run: pandoc-docx-tools.py apply
+       - Commit the changes to version control
+
+    3. Direct XML Editing:
+       - Edit files in the reference-doc/ directory
+       - Run: pandoc-docx-tools.py edit
+       - This packages the directory back into reference-doc.docx
+
+    4. Compiling Documents:
+       - Write content in Markdown
+       - Run: pandoc-docx-tools.py compile document.md
+       - Output uses styles from reference-doc.docx
+    """
+    pass
+
+
+@cli.command()
+@click.argument("md_file", type=click.Path(exists=True, path_type=Path))
+def compile(md_file: Path) -> None:
+    """Compile a Markdown file to DOCX using Pandoc.
+
+    Compiles Markdown to DOCX format using Pandoc with configured options including:
+
+    \b
+    - Numbered sections (--number-sections)
+    - Table of contents (--toc)
+    - List of tables and figures (--lot, --lof)
+    - Citations with bibliography (--citeproc)
+    - Native Word numbering (docx+native_numbering)
+
+    The output uses styles from reference-doc.docx and structure from template.openxml.
+    The compiled DOCX file will be automatically opened in your default application.
+    """
     compile_markdown(md_file)
 
 
-def cmd_edit(args: argparse.Namespace) -> None:
-    """Handle the edit subcommand."""
-    source_dir = Path(args.directory) if args.directory else None
-    edit_reference_doc(source_dir)
+@cli.command()
+@click.argument(
+    "directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=False,
+    default=None,
+)
+def edit(directory: Optional[Path]) -> None:
+    """Create DOCX from a directory.
+
+    Package a directory into a DOCX file.
+
+    Use this command after manually editing the unzipped DOCX structure in a directory.
+    The output DOCX filename is derived from the directory name.
+
+    For example, packaging 'my-template/' creates 'my-template.docx'.
+
+    The resulting DOCX will be opened in your default application.
+
+    If no directory is specified, defaults to 'reference-doc/'.
+    """
+    edit_reference_doc(directory)
 
 
-def cmd_apply(args: argparse.Namespace) -> None:
-    """Handle the apply subcommand."""
-    docx_path = Path(args.docx) if args.docx else None
-    apply_reference_doc_edits(docx_path)
+@cli.command()
+@click.argument(
+    "docx",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=False,
+    default=None,
+)
+def apply(docx: Optional[Path]) -> None:
+    """Extract DOCX to a directory of the same name.
+
+    Extract a DOCX file to a directory of the same name and format for version control.
+
+    \b
+    Use this command to:
+    1. Extract a DOCX file after editing styles in Microsoft Word
+    2. Sync changes from the DOCX back to the directory structure
+    3. Prepare the files for committing to version control
+
+    The directory name is derived from the DOCX filename (without the .docx extension).
+    For example, 'my-template.docx' syncs to 'my-template/'.
+
+    If no DOCX file is specified, defaults to 'reference-doc.docx'.
+    """
+    apply_reference_doc_edits(docx)
 
 
-def cmd_format(args: argparse.Namespace) -> None:
-    """Handle the format subcommand."""
-    path = Path(args.path)
+@cli.command()
+@click.argument(
+    "path",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=False,
+    default=Path("./reference-doc"),
+)
+def format(path: Path) -> None:
+    """Format XML files for version control.
+
+    Format XML files in a directory to improve readability and version control.
+
+    This makes the XML files suitable for meaningful version control diffs.
+
+    If no path is specified, defaults to './reference-doc'.
+    """
     format_openxml(path)
 
 
@@ -700,171 +803,5 @@ def cmd_format(args: argparse.Namespace) -> None:
 # =============================================================================
 
 
-def main() -> None:
-    """Main entry point with subcommand support."""
-    description = """
-Pandoc DOCX Tools - Manage Pandoc DOCX reference documents
-
-Write content in Markdown (version-control friendly) while maintaining corporate
-styling requirements in DOCX output. Separates content from presentation.
-"""
-
-    epilog = """
-WORKFLOW
-========
-
-1. Initial Setup:
-   - Create or obtain a reference-doc.docx with your desired styles
-   - Run: %(prog)s apply
-   - This extracts and formats the DOCX for version control
-
-2. Editing Styles in Word:
-   - Modify reference-doc.docx in Microsoft Word
-   - Update styles via: Home → Styles pane → Filter → Modify
-   - Run: %(prog)s apply
-   - Commit the changes to version control
-
-3. Direct XML Editing:
-   - Edit files in the reference-doc/ directory
-   - Run: %(prog)s edit
-   - This packages the directory back into reference-doc.docx
-
-4. Compiling Documents:
-   - Write content in Markdown
-   - Run: %(prog)s compile document.md
-   - Output uses styles from reference-doc.docx
-
-
-TECHNICAL DETAILS
-=================
-
-Reference Document (--reference-doc):
-    A template DOCX whose styles and document properties (margins, headers, footers)
-    are applied to output. The content is ignored; only styles matter.
-
-OOXML Template (--template):
-    An XML template controlling document structure and content placement using
-    Pandoc variables like $body$, $toc$, etc.
-
-
-REFERENCES
-==========
-
-Article: https://rnwest.engineer/auto-generate-docx-with-pandoc/
-OpenXML Explained: https://www.brandwares.com/downloads/Open-XML-Explained.pdf
-OpenXML Reference: http://officeopenxml.com/
-
-Example: %(prog)s compile document.md
-"""
-
-    parser = argparse.ArgumentParser(
-        description=description,
-        epilog=epilog,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    subparsers = parser.add_subparsers(
-        title="commands",
-        description="Available commands",
-        dest="command",
-        required=True,
-    )
-
-    # Compile command
-    compile_parser = subparsers.add_parser(
-        "compile",
-        help="Compile a Markdown file to DOCX using Pandoc",
-        description="""
-Compile Markdown to DOCX format using Pandoc with configured options including:
-- Numbered sections (--number-sections)
-- Table of contents (--toc)
-- List of tables and figures (--lot, --lof)
-- Citations with bibliography (--citeproc)
-- Native Word numbering (docx+native_numbering)
-
-The output uses styles from reference-doc.docx and structure from template.openxml.
-The compiled DOCX file will be automatically opened in your default application.
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    compile_parser.add_argument(
-        "md_file",
-        help="Path to the Markdown file to compile",
-    )
-    compile_parser.set_defaults(func=cmd_compile)
-
-    # Edit command
-    edit_parser = subparsers.add_parser(
-        "edit",
-        help="Create DOCX from a directory",
-        description="""
-Package a directory into a DOCX file.
-
-Use this command after manually editing the unzipped DOCX structure in a directory.
-The output DOCX filename is derived from the directory name.
-
-For example, packaging 'my-template/' creates 'my-template.docx'.
-
-The resulting DOCX will be opened in your default application.
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    edit_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=None,
-        help="Path to the directory to package (default: reference-doc/)",
-    )
-    edit_parser.set_defaults(func=cmd_edit)
-
-    # Apply command
-    apply_parser = subparsers.add_parser(
-        "apply",
-        help="Extract DOCX to a directory of the same name",
-        description="""
-Extract a DOCX file to a directory of the same name and format for version control.
-
-Use this command to:
-1. Extract a DOCX file after editing styles in Microsoft Word
-2. Sync changes from the DOCX back to the directory structure
-3. Prepare the files for committing to version control
-
-The directory name is derived from the DOCX filename (without the .docx extension).
-For example, 'my-template.docx' syncs to 'my-template/'.
-""",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    apply_parser.add_argument(
-        "docx",
-        nargs="?",
-        default=None,
-        help="Path to the DOCX file to extract (default: reference-doc.docx)",
-    )
-    apply_parser.set_defaults(func=cmd_apply)
-
-    # Format command
-    format_parser = subparsers.add_parser(
-        "format",
-        help="Format XML files for version control",
-        description="""
-Format XML files in a directory to improve readability and version control.
-
-This makes the XML files suitable for meaningful version control diffs.
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    format_parser.add_argument(
-        "path",
-        nargs="?",
-        default="./reference-doc",
-        help="Path to the folder containing XML files (default: ./reference-doc)",
-    )
-    format_parser.set_defaults(func=cmd_format)
-
-    # Parse arguments and call the appropriate function
-    args = parser.parse_args()
-    args.func(args)
-
-
 if __name__ == "__main__":
-    main()
+    cli()
