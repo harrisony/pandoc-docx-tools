@@ -103,17 +103,18 @@ Converted to Python and unified by Claude Code
 """
 
 import argparse
+import os
 import platform
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import NoReturn, Optional
 
+from lxml import etree as ET
 
 # Constants
 MARKDOWN_EXTENSION = ".md"
@@ -148,8 +149,7 @@ def open_file(file_path: Path) -> None:
         if system == "Darwin":  # macOS
             subprocess.run(["open", str(file_path)], check=True)
         elif system == "Windows":
-            # Use subprocess instead of os.startfile for consistency
-            subprocess.run(["cmd", "/c", "start", "", str(file_path)], check=True)
+            os.startfile(str(file_path))
         else:  # Linux and other Unix-like systems
             subprocess.run(["xdg-open", str(file_path)], check=True)
     except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
@@ -528,24 +528,20 @@ def remove_attributes(node: ET.Element) -> None:
         "w:storeItemID",
     }
 
-    # Filter out superfluous attributes and rsid attributes in one pass
-    node.attrib = {
-        key: value
-        for key, value in node.attrib.items()
-        if key not in SUPERFLUOUS_ATTRS
-        and not (key.startswith("w:rsid") or ("{" in key and "rsid" in key))
-    }
+    # Collect keys to delete (can't modify dict during iteration)
+    keys_to_delete = [
+        key
+        for key in node.attrib.keys()
+        if key in SUPERFLUOUS_ATTRS or key.startswith("w:rsid")
+    ]
+
+    # Delete the attributes
+    for key in keys_to_delete:
+        del node.attrib[key]
 
     # Recursively process child nodes
     for child in node:
         remove_attributes(child)
-
-
-def _extract_namespace(root: ET.Element) -> Optional[str]:
-    """Extract namespace URI from root element tag."""
-    if root.tag.startswith("{"):
-        return root.tag[1 : root.tag.index("}")]
-    return None
 
 
 def remove_elements(root: ET.Element) -> None:
@@ -555,31 +551,28 @@ def remove_elements(root: ET.Element) -> None:
     These elements appear to be superfluous, change on every save, and should
     therefore be removed to make version-control easier.
     """
-    SUPERFLUOUS_ELEMENTS = ["w:rsid", "w:id"]
-    namespace_uri = _extract_namespace(root)
+    SUPERFLUOUS_ELEMENTS = ["rsid", "id"]
 
-    # Build list of elements to remove with proper namespace handling
-    for element_name in SUPERFLUOUS_ELEMENTS:
-        if ":" in element_name:
-            prefix, local_name = element_name.split(":", 1)
-            tag_to_find = (
-                f"{{{namespace_uri}}}{local_name}"
-                if namespace_uri and prefix == "w"
-                else local_name
-            )
-        else:
-            tag_to_find = element_name
+    # Get namespace map from root element
+    nsmap = root.nsmap
+    w_namespace = nsmap.get("w")  # WordprocessingML namespace
 
-        # Find and remove elements
-        for parent in root.iter():
-            # Create list copy to avoid modification during iteration
-            children_to_remove = [
-                child
-                for child in parent
-                if child.tag == tag_to_find or child.tag.endswith(f"}}{local_name}")
-            ]
-            for child in children_to_remove:
-                parent.remove(child)
+    if not w_namespace:
+        return  # No namespace to work with
+
+    # Build qualified names using lxml's QName
+    tags_to_remove = [ET.QName(w_namespace, elem) for elem in SUPERFLUOUS_ELEMENTS]
+
+    # Single pass: collect all elements to remove
+    elements_to_remove = []
+    for tag in tags_to_remove:
+        elements_to_remove.extend(root.iter(tag))
+
+    # Remove all collected elements
+    for element in elements_to_remove:
+        parent = element.getparent()
+        if parent is not None:
+            parent.remove(element)
 
 
 def format_xml_with_namespaces(xml_string: str) -> str:
@@ -623,6 +616,7 @@ def format_xml_file(file_path: Path) -> None:
     print(f"Formatting {file_path}")
 
     # Read and parse XML
+    # Note: lxml automatically preserves namespace prefixes from the source document
     tree = ET.parse(file_path)
     root = tree.getroot()
 
@@ -632,12 +626,22 @@ def format_xml_file(file_path: Path) -> None:
 
     # Convert to string with indentation
     ET.indent(tree, space="  ")
-    xml_string = ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+    # Use lxml's tostring with proper encoding and declaration handling
+    # encoding='unicode' returns a string instead of bytes
+    xml_string = ET.tostring(
+        root,
+        encoding="unicode",
+        pretty_print=False,  # We already indented with ET.indent
+        xml_declaration=False,  # DOCX XML files don't include XML declarations
+    )
 
     # Format XML namespace declarations on separate lines
     xml_string = format_xml_with_namespaces(xml_string)
 
-    # Write formatted XML with UTF-8 encoding (no BOM) and trailing newline
+    # Write formatted XML with UTF-8 encoding (no BOM) and CRLF line endings
+    # newline="" prevents Python from doing any line ending translation
+    # so our explicit \r\n stays as-is on all platforms
     file_path.write_text(xml_string + "\r\n", encoding="utf-8", newline="")
 
 
