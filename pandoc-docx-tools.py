@@ -367,14 +367,13 @@ def edit_reference_doc(source_dir: Optional[Path] = None) -> None:
                     The output DOCX will be named after the directory + .docx extension.
     """
     # Set paths relative to current directory
-    cwd = Path.cwd()
     if source_dir is None:
-        source_dir = cwd / REFERENCE_DIR
-
+        source_dir = Path.cwd() / REFERENCE_DIR
+    out_dir = source_dir.parent
     # Derive docx filename from directory name
     dir_name = source_dir.name
-    zip_path = cwd / f"{dir_name}.zip"
-    docx_path = cwd / f"{dir_name}.docx"
+    zip_path = out_dir / f"{dir_name}.zip"
+    docx_path = out_dir / f"{dir_name}.docx"
 
     # Validate source directory exists
     validate_source_directory(source_dir)
@@ -428,13 +427,13 @@ def apply_reference_doc_edits(docx_path: Optional[Path] = None) -> None:
                    The target directory will be the filename without the .docx extension.
     """
     # Set paths
-    cwd = Path.cwd()
     if docx_path is None:
-        docx_path = cwd / REFERENCE_DOC
+        docx_path = Path.cwd() / REFERENCE_DOC
+    out_dir = docx_path.parent
 
     # Derive folder name from filename (remove .docx extension)
     folder_name = docx_path.stem
-    target_dir = cwd / folder_name
+    target_dir = out_dir / folder_name
 
     # Ensure the .docx file exists
     if not docx_path.exists():
@@ -635,7 +634,7 @@ def format_xml_file(file_path: Path) -> None:
         root,
         encoding="unicode",
         pretty_print=False,  # We already indented with ET.indent
-        xml_declaration=False,  # DOCX XML files don't include XML declarations
+        xml_declaration=False,  # DOCX XML files don't include XML declarations ## FIXME: I think this is false
     )
 
     # Format XML namespace declarations on separate lines
