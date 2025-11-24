@@ -228,6 +228,7 @@ def build_pandoc_command(
     Returns:
         List of command arguments for subprocess
     """
+    # FIXME: this is slop
     return [
         "pandoc",
         f"--reference-doc={reference_doc}",
@@ -359,7 +360,9 @@ def validate_source_directory(source_dir: Path) -> None:
         error_exit(f"Directory '{source_dir}' does not exist.")
 
 
-def edit_reference_doc(source_dir: Optional[Path] = None) -> None:
+def edit_reference_doc(
+    source_dir: Optional[Path] = None, template: bool = False
+) -> None:
     """Create DOCX from a directory.
 
     Args:
@@ -373,7 +376,8 @@ def edit_reference_doc(source_dir: Optional[Path] = None) -> None:
     # Derive docx filename from directory name
     dir_name = source_dir.name
     zip_path = out_dir / f"{dir_name}.zip"
-    docx_path = out_dir / f"{dir_name}.docx"
+    ext = "dotx" if template else "docx"
+    docx_path = out_dir / f"{dir_name}.{ext}"
 
     # Validate source directory exists
     validate_source_directory(source_dir)
@@ -735,7 +739,8 @@ def compile(md_file: Path) -> None:
     required=False,
     default=None,
 )
-def edit(directory: Optional[Path]) -> None:
+@click.option("--template", is_flag=True)
+def edit(directory: Optional[Path], template: bool) -> None:
     """Create DOCX from a directory.
 
     Package a directory into a DOCX file.
@@ -749,7 +754,7 @@ def edit(directory: Optional[Path]) -> None:
 
     If no directory is specified, defaults to 'reference-doc/'.
     """
-    edit_reference_doc(directory)
+    edit_reference_doc(directory, template)
 
 
 @cli.command()
